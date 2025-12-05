@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 
 namespace Breakthrough
@@ -16,15 +15,11 @@ namespace Breakthrough
         private int _firstMove;
         // Текущее состояние игрового поля
         private int[,]? _matrix;
-        // Флаг, что партия завершилась победой
-        private bool _isWin;
 
         // Путь к текущему файлу сохранения
         private string? _saveFilePath;
         // Объект для работы с файлами сохранений
         private readonly SaveFileManager _fileManager;
-        // Генератор уникальных кодов
-        private readonly UniqueCodeGenerator _codeGenerator;
 
         // Публичные свойства для чтения из внешнего кода
         public string UniqueCode => _uniqueCode;
@@ -32,14 +27,23 @@ namespace Breakthrough
         public string[]? Players => _players;
         public int FirstMove => _firstMove;
         public int[,]? Matrix => _matrix;
-        public bool IsWin => _isWin;
 
-        // Конструктор создает менеджеры для файлов и кодов и генерирует первый код
+        // Конструктор создает менеджеры для файлов и кодов, генерирует первый код
         public SaveManager()
         {
             _fileManager = new SaveFileManager();
-            _codeGenerator = new UniqueCodeGenerator();
-            _uniqueCode = _codeGenerator.Generate();
+            _uniqueCode = UniqueCodeGenerator.Generate();
+        }
+        
+        // Внутренний конструктор для загрузки из файла
+        internal SaveManager(string uniqueCode, int moveCount, string[] players, int firstMove, int[,] matrix)
+        {
+            _fileManager = new SaveFileManager();
+            _uniqueCode = uniqueCode;
+            _moveCount = moveCount;
+            _players = players;
+            _firstMove = firstMove;
+            _matrix = matrix;
         }
 
         // Инициализация новой партии и моментальное сохранение стартового состояния
@@ -49,7 +53,6 @@ namespace Breakthrough
             _moveCount = 0;
             _players = players;
             _firstMove = firstMove;
-            _isWin = false;
             PerformSave();
         }
 
@@ -61,13 +64,20 @@ namespace Breakthrough
             PerformSave();
         }
 
-        // Отметить партию как выигранную и сохранить её снова
+        // Отметить партию как выигранную и сохранить статистику
         public void Win()
         {
-            _isWin = true;
-            PerformSave();
-            // сохраняю здесь, что бы top-scores всегда имел top-scores, хотя на деле это нужно только для доп баллов по сохранению
-            UpdateTopScores(); 
+            // Определяем победителя
+            if (_players == null || _players.Length < 2)
+                throw new InvalidOperationException("Невозможно определить победителя: не заданы имена игроков");
+
+            string winner = _players[(_firstMove + _moveCount + 1) % 2];
+            
+            // Обновляем статистику в отдельном файле
+            GameStatistics.UpdateStatistics(winner, _moveCount);
+            
+            // Удаляем сохранение, так как игра завершена
+            _fileManager.DeleteOldFile(_saveFilePath);
         }
         
         // Статический метод для получения всех сохранений из папки
@@ -77,16 +87,19 @@ namespace Breakthrough
             return fileManager.LoadAll();
         }
         
-        // Статический метод получения top-scores из файла
+        // Статический метод получения топ-счетов
         public static string[] GetTopScores()
         {
-            // Перед чтением всегда обновляем файл, это обеспечивает его существование и актуальность
-            UpdateTopScores();
+            var stats = GameStatistics.Load();
             
-            // Возвращаем содержимое файла
-            return File.ReadAllLines(Paths.TopScoresPath);
+            // Возвращаем массив строк
+            return
+            [
+                "Игрок с самым большим количеством побед", stats.GetBestPlayer(),
+                "Самая длинная игра", stats.LongestGame.HasValue ? stats.LongestGame.Value.ToString() : "Не определена",
+                "Самая короткая игра", stats.ShortestGame.HasValue ? stats.ShortestGame.Value.ToString() : "Не определена"
+            ];
         }
-        
         
         // Общий метод сохранения: создает новый файл и удаляет старый
         private void PerformSave()
@@ -94,8 +107,8 @@ namespace Breakthrough
             // Запоминаем старый файл, чтобы удалить его после успешного сохранения
             string? oldFile = _saveFilePath;
 
-            // Важно: код обновляется здесь, поэтому имя файла всегда новое
-            _uniqueCode = _codeGenerator.Generate();
+            // Код обновляется здесь, поэтому имя файла всегда новое
+            _uniqueCode = UniqueCodeGenerator.Generate();
             _saveFilePath = _fileManager.BuildFilePath(_uniqueCode);
 
             // Сохраняем текущее состояние в новый файл
@@ -104,31 +117,13 @@ namespace Breakthrough
             // Удаляем старый файл (если он был)
             _fileManager.DeleteOldFile(oldFile);
         }
-
-        // Статический метод, обновляющий файл top-scores 
-        private static void UpdateTopScores()
-        {
-            // Получаем все сохранения и берём из них те, где игра закончена
-            TopScores gameData = new TopScores(GetAllSaves().Where(s => s.IsWin));
-            
-            // Создаём массив строк, в который сразу кладём нужные значения
-            string[] topScores =
-            [
-                "Игрок с самым большим количеством побед", gameData.BestPlayer, 
-                "Самая длинная игра", gameData.LongestGame, 
-                "Самая короткая игра", gameData.ShortestGame
-            ];
-            
-            // Записываем получившийся массив в нужный файл
-            File.WriteAllLines(Paths.TopScoresPath, topScores);
-        }
     }
 
     // Генератор уникальных кодов
-    internal class UniqueCodeGenerator
+    internal static class UniqueCodeGenerator
     {
         // Генерирует строку по текущему времени в формате ГГГГММДДЧЧММССМММ
-        public string Generate() => DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+        public static string Generate() => DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
     }
     
     // Класс с путями папок
@@ -140,8 +135,8 @@ namespace Breakthrough
         // Сохраняем директорию для сохранений
         public static string SavesFolder => Path.Combine(BaseDirectory, "Saves");
         
-        // Сохраняем директорию для top-scores
-        public static string TopScoresPath => Path.Combine(BaseDirectory, "top-scores.txt");
+        // Путь к файлу со статистикой
+        public static string StatisticsPath => Path.Combine(BaseDirectory, "top-scores.json");
     }
 
     // Класс для работы с файлами сохранений (создание, загрузка, удаление)
@@ -165,7 +160,7 @@ namespace Breakthrough
             serializer.Serialize(saveData, path);
         }   
 
-        // Удаляет старый файл, если путь валидный и файл существует
+        // Удаляет старый файл, если путь рабочий и файл существует
         public void DeleteOldFile(string? oldFilePath)
         {
             if (!string.IsNullOrEmpty(oldFilePath) && File.Exists(oldFilePath))
@@ -203,7 +198,6 @@ namespace Breakthrough
             try
             {
                 var saveData = serializer.Deserialize(filePath);
-                EnsureFileNotModifiedExternally(filePath);
                 return saveData != null ? converter.ToSaveManager(saveData) : null;
             }
             catch (Exception ex)
@@ -225,26 +219,6 @@ namespace Breakthrough
                     + Environment.NewLine);
                 
                 return null;
-            }
-        }
-        
-        // Защита от изменений
-        private void EnsureFileNotModifiedExternally(string filePath)
-        {
-            // сохраняем имя файла - уникальный код без вскрытия файла
-            var filename = Path.GetFileNameWithoutExtension(filePath);
-            // Проверяем, что имя файла можно преобразовать в DateTime формат
-            if (DateTime.TryParseExact(filename, "yyyyMMddHHmmssfff",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out var fromName))
-            {
-                // Сохраняем время последнего изменения файла
-                var fromFs = File.GetLastWriteTimeUtc(filePath);
-                // Считаем разницу между последним изменением файла и его кодом
-                var diff = (fromFs - fromName).Duration();
-                
-                // Если разница больше 100 ms, то кидаем ошибку с комментарием, что время изменения и код не совпадают
-                if (diff > TimeSpan.FromMilliseconds(100)) throw new InvalidDataException("FileWriteAndCodeDoNotMatch");
             }
         }
 
@@ -288,7 +262,6 @@ namespace Breakthrough
                 MoveCount = manager.MoveCount,
                 Players = manager.Players,
                 FirstMove = manager.FirstMove,
-                IsWin = manager.IsWin,
                 // Многомерный массив нельзя напрямую кодировать, поэтому конвертация в ступенчатый
                 Matrix = _matrixConverter.ToJagged(manager.Matrix)
             };
@@ -297,34 +270,16 @@ namespace Breakthrough
         // Восстанавливает SaveManager из DTO
         public SaveManager ToSaveManager(SaveData data)
         {
-            // Создаем новый SaveManager. Его конструктор инициализирует свои поля,
-            // затем ниже приватные поля переписываются через reflection.
-            var manager = new SaveManager();
-
-            // Reflection: выставляем приватные поля напрямую, обходя публичный API
-            SetPrivateField(manager, "_uniqueCode", data.UniqueCode ?? throw new InvalidDataException("Save file is missing 'UniqueCode' field"));
-            SetPrivateField(manager, "_moveCount", data.MoveCount);
-            SetPrivateField(manager, "_players", data.Players ?? throw new InvalidDataException("Save file is missing 'Players' field"));
-            SetPrivateField(manager, "_firstMove", data.FirstMove);
-            SetPrivateField(manager, "_matrix", _matrixConverter.ToMultidimensional(data.Matrix) ?? throw new InvalidDataException("Save file is missing 'Matrix' field"));
-            SetPrivateField(manager, "_isWin", data.IsWin);
-            
-            
-            return manager;
-        }
-
-        // Универсальный метод для установки приватного поля через reflection
-        private void SetPrivateField(object obj, string fieldName, object value)
-        {
-            var field = obj.GetType().GetField(
-                fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            // Если поле найдено, записываем значение
-            field?.SetValue(obj, value);
+            return new SaveManager(
+                data.UniqueCode ?? throw new InvalidDataException("Save file is missing 'UniqueCode' field"),
+                data.MoveCount,
+                data.Players ?? throw new InvalidDataException("Save file is missing 'Players' field"),
+                data.FirstMove,
+                _matrixConverter.ToMultidimensional(data.Matrix) ?? throw new InvalidDataException("Save file is missing 'Matrix' field")
+            );
         }
     }
-
+    
     // Конвертер матриц между многомерным массивом и ступенчатым (jagged)
     internal class MatrixConverter
     {
@@ -367,7 +322,7 @@ namespace Breakthrough
         }
     }
 
-    // DTO для кодирования (структура данных, которая уходит в JSON)
+    // DTO для кодирования сохранений (структура данных, которая уходит в JSON)
     internal class SaveData
     {
         // Уникальный код сохранения (часть имени файла)
@@ -380,109 +335,76 @@ namespace Breakthrough
         public int FirstMove { get; init; }
         // Игровое поле в виде ступенчатого массива (удобно для JSON)
         public int[][]? Matrix { get; init; }
-        // Флаг завершения партии победой
-        public bool IsWin { get; init; }
     }
 
-    // Класс находящий top-scores
-    internal class TopScores
+    // Класс для работы со статистикой игр
+    internal class GameStatistics
     {
+        // Словарь с количеством побед каждого игрока
+        public Dictionary<string, int> PlayerWins { get; init; } = new();
+        
+        // Самая короткая игра (количество ходов)
+        public int? ShortestGame { get; set; }
+        
+        // Самая длинная игра (количество ходов)
+        public int? LongestGame { get; set; }
 
-        // Внутренний класс с конкретными значениями, что бы IDE не пытался найти очередной bool, а также работать только с нужными значениями
-        private class OnlyStats(string winner, int moveCount)
+        // Загрузка статистики из файла
+        public static GameStatistics Load()
         {
-            // Имя победителя
-            public readonly string Winner = winner;
-            
-            // Количество ходов
-            public readonly int MoveCount = moveCount;
-            
-        }
-        
-        // Список законченных игр
-        readonly IEnumerable<OnlyStats> _endedGames;
+            if (!File.Exists(Paths.StatisticsPath))
+                return new GameStatistics();
 
-        // Длительность кратчайшей игры
-        private readonly int _shortestGame;
-        
-        // Длительность длиннейшей игры
-        private readonly int _longestGame;
-        
-        
-        // Публичные свойства для чтения при перезаписи
-        public string BestPlayer { get; }
-        public string ShortestGame => _shortestGame < int.MaxValue ? _shortestGame.ToString() : "Не определена";
-        public string LongestGame => int.MinValue < _longestGame ? _longestGame.ToString() : "Не определена";
-        
-        // Конструктор, что бы с помощью экземпляра сразу заполнить 
-        public TopScores(IEnumerable<SaveManager> endedGames)
-        {
-            // создаём лист экземпляров OnlyScores не учитывая все null значения
-            _endedGames = endedGames
-                .Select(g =>
-                {
-                    // проверка того, что массив имён существует и записываем их в OnlyStats, в ином же случае создаём экземпляр с игнорируемыми значениями
-                    if (g.Players == null) return new OnlyStats("", int.MaxValue);
-                    var winner = g.Players[(g.FirstMove + g.MoveCount + 1) % 2];
-                    return new OnlyStats(winner, g.MoveCount);
-                })
-                // Проверяем, что бы у победителя было имя (исключая даже те случаи, когда списка имён вообще не было) 
-                .Where(s => !string.IsNullOrEmpty(s.Winner))
-                .ToList();
-            
-            // Внутри конструктора определяем все возвращаемые значения
-            BestPlayer = FindBestPlayer();
-            _shortestGame = FindShortestGame();
-            _longestGame = FindLongestGame();
+            try
+            {
+                string json = File.ReadAllText(Paths.StatisticsPath);
+                return JsonSerializer.Deserialize<GameStatistics>(json) ?? new GameStatistics();
+            }
+            catch
+            {
+                // Если файл поврежден, возвращаем новую статистику
+                return new GameStatistics();
+            }
         }
 
-        // Находим лучшего игрока
-        private string FindBestPlayer()
+        // Сохранение статистики в файл
+        public void Save()
         {
-            // Проверяем наличие законченных игр
-            if (!_endedGames.Any())
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string json = JsonSerializer.Serialize(this, options);
+            File.WriteAllText(Paths.StatisticsPath, json);
+        }
+
+        // Обновление статистики после победы
+        public static void UpdateStatistics(string winner, int moveCount)
+        {
+            var stats = Load();
+
+            // Обновляем количество побед игрока
+            if (!stats.PlayerWins.TryAdd(winner, 1))
+                stats.PlayerWins[winner]++;
+
+            // Обновляем самую короткую игру
+            if (!stats.ShortestGame.HasValue || moveCount < stats.ShortestGame.Value)
+                stats.ShortestGame = moveCount;
+
+            // Обновляем самую длинную игру
+            if (!stats.LongestGame.HasValue || moveCount > stats.LongestGame.Value)
+                stats.LongestGame = moveCount;
+
+            stats.Save();
+        }
+
+        // Получение игрока с наибольшим количеством побед
+        public string GetBestPlayer()
+        {
+            if (PlayerWins.Count == 0)
                 return "Не определён";
-            
-            // Составляем список игроков
-            var players = _endedGames.Select(s => s.Winner).ToArray();
 
-            // Создаём список с победами
-            var wins = players
-                .GroupBy(p => p)
-                .Select(g => new { Player = g.Key, Wins = g.Count() })
-                .ToList();
-            
-            // Получаем наибольшее количество упоминаний
-            int max = wins.Max(g => g.Wins);
-            
-            // Выводим список тех, у кого максимальное количество упоминаний
-            var bestPlayers = wins
-                .Where(g => g.Wins == max)
-                .Select(g => g.Player)
-                .ToArray();
-            
-            // Если в массиве только 1 игрок, то сохраняем его как лучшего, иначе считаем, что легенда ещё не появилась
+            var maxWins = PlayerWins.Max(p => p.Value);
+            var bestPlayers = PlayerWins.Where(p => p.Value == maxWins).Select(p => p.Key).ToArray();
+
             return bestPlayers.Length == 1 ? bestPlayers[0] : "Не определён";
-        }
-
-        // Находим кратчайшую игру
-        private int FindShortestGame()
-        {
-            // Проверяем наличие законченных игр
-            if (!_endedGames.Any()) return int.MaxValue;
-            
-            // Возвращаем минимальное значение
-            return _endedGames.Min(g => g.MoveCount);
-        }
-
-        // Находим длиннейшую игру
-        private int FindLongestGame()
-        {
-            // Проверяем наличие законченных игр
-            if (!_endedGames.Any()) return int.MinValue;
-
-            // Возвращаем максимальное значение
-            return _endedGames.Max(g => g.MoveCount);
         }
     }
 }
