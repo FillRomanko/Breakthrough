@@ -535,62 +535,32 @@ class SelectPawnState : GameplayState
 
     private void RequestAvailableMoves(int row, int col)
     {
-        if (GameController.Field[row, col] == 1) // Белые
+        // ЗАГЛУШКА для Александра
+        // Этот метод должен вернуть все возможные ходы для пешки на позиции (row, col)
+        // Александр должен реализовать правильную логику определения доступных ходов
+        
+        // Временная заглушка - просто возвращаем базовые возможные ходы без проверки границ и занятости
+        int currentPlayer = GameController.Field[row, col];
+        
+        if (currentPlayer == 1) // Белые
         {
             availableMoves = new int[,] {
-                { row + 1, col },
-                { row + 1, col - 1 },
-                { row + 1, col + 1 }
+                { row + 1, col },      // Вперед
+                { row + 1, col - 1 },  // Вперед-влево
+                { row + 1, col + 1 }   // Вперед-вправо
             };
         }
-        else if (GameController.Field[row, col] == 2) // Черные
+        else if (currentPlayer == 2) // Черные
         {
             availableMoves = new int[,] {
-                { row - 1, col },
-                { row - 1, col - 1 },
-                { row - 1, col + 1 }
+                { row - 1, col },      // Назад
+                { row - 1, col - 1 },  // Назад-влево
+                { row - 1, col + 1 }   // Назад-вправо
             };
         }
         else
         {
             availableMoves = new int[0, 2];
-        }
-
-        // Фильтруем ходы, которые выходят за пределы доски или заняты своими пешками
-        FilterAvailableMoves();
-    }
-
-    private void FilterAvailableMoves()
-    {
-        int rows = GameController.Field.GetLength(0);
-        int cols = GameController.Field.GetLength(1);
-        int currentPlayer = GameController.IsWhiteTurn ? 1 : 2;
-
-        // Создаем временный список для валидных ходов
-        var validMoves = new System.Collections.Generic.List<int[]>();
-
-        for (int i = 0; i < availableMoves.GetLength(0); i++)
-        {
-            int toRow = availableMoves[i, 0];
-            int toCol = availableMoves[i, 1];
-
-            // Проверяем границы доски
-            if (toRow >= 0 && toRow < rows && toCol >= 0 && toCol < cols)
-            {
-                // Проверяем, что клетка не занята своей пешкой
-                if (GameController.Field[toRow, toCol] != currentPlayer)
-                {
-                    validMoves.Add(new int[] { toRow, toCol });
-                }
-            }
-        }
-
-        // Преобразуем список обратно в массив
-        availableMoves = new int[validMoves.Count, 2];
-        for (int i = 0; i < validMoves.Count; i++)
-        {
-            availableMoves[i, 0] = validMoves[i][0];
-            availableMoves[i, 1] = validMoves[i][1];
         }
     }
 
