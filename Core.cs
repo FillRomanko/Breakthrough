@@ -1,164 +1,131 @@
-﻿using System;
-using System.Collections.Generic;
+﻿namespace Breakthrough;
 
-namespace Breakthrough;
+internal enum Winner // Перечисление описывающее, кто победил в игре
+{
+    None,   // Никто не победил, игра продолжается
+    White,  // Победили белые
+    Black   // Победили черные
+}
 
-public static class Core
+internal static class Core // Статический класс с ядром игровой логики, можно поменять на другой и будет совершенно другая игра
 {
     // Свойство для определения чья очередь (на основе данных SaveManager)
-    public static bool IsWhiteTurn(SaveManager saveManager)
-    {
-        return (saveManager.MoveCount + saveManager.FirstMove) % 2 == 0;
-    }
+    internal static bool IsWhiteTurn(SaveManager saveManager) => (saveManager.MoveCount + saveManager.FirstMove) % 2 == 0; 
 
     // Проверка доступных ходов для конкретной пешки
-    public static int[,] GetAvailableMovesForPawn(SaveManager saveManager, int row, int col)
+    internal static int[,] GetAvailableMovesForPawn(SaveManager saveManager, int row, int col)
     {
-        int[,] matrix = saveManager.Matrix ?? throw new InvalidOperationException("Матрица не инициализирована");
-        int height = matrix.GetLength(0);
-        int width = matrix.GetLength(1);
+        int[,] matrix = saveManager.Matrix ?? throw new InvalidOperationException("Матрица не инициализирована"); // Копируем матрицу, если она не пустой объект, иначе кидаем исключение
+        int height = matrix.GetLength(0), width = matrix.GetLength(1); // Получаем ширину и высоту соответственно
+        int pawnType = matrix[row, col]; // Получаем элемент, который стоит на переданных координатах
+        bool isWhite = pawnType == Objects.WhitePawn; // Сравниваем его с белой пешкой
         
-        int pawnType = matrix[row, col];
-        bool isWhite = pawnType == Objects.WhitePawn;
+        if (isWhite != IsWhiteTurn(saveManager)) // Проверяем, соответствует ли пешка текущему ходу
+            return new int[0, 2]; // Возвращаем пустой массив
         
-        // Проверяем, соответствует ли пешка текущему ходу
-        if (isWhite != IsWhiteTurn(saveManager))
-            return new int[0, 2];
+        int direction = isWhite ? -1 : 1; // Определяем направление движения (белые вверх [-1], черные вниз [+1])
+        int[] colOffsets = [-1, 0, 1]; // Возможные смещения по столбцу: влево (-1), прямо (0), вправо (+1)
+        
+        var moves = colOffsets // LINQ для вычисления всех допустимых ходов
+            .Select(offset => (row: row + direction, col: col + offset, colOffset: offset)) // Проходимся по всем позициям как по числовым значениям
+            .Where(pos => IsWithinBounds(pos.row, pos.col, height, width)) // Фильтруем только те ходы, которые могут попасть на доску
+            .Where(pos => IsValidMove(matrix, pos.row, pos.col, pos.colOffset, isWhite)) // Фильтруем ходы по правилам игры
+            .Select(pos => (pos.row, pos.col)) // Переводим исключительно в координаты
+            .ToArray();
 
-        // Определяем направление движения (белые вверх [-1], черные вниз [+1])
-        int direction = isWhite ? -1 : 1;
-        
-        List<(int, int)> moves = new List<(int, int)>();
-        int[] colOffsets = { -1, 0, 1 };
+        return ConvertToMatrix(moves); // Переводим в матрицу [N, 2] с координатами
+    }
 
-        foreach (int colOffset in colOffsets)
+    // Проверка, что координаты хода находятся в пределах доски
+    private static bool IsWithinBounds(int row, int col, int height, int width) => row >= 0 && row < height && col >= 0 && col < width;
+    
+    // Проверка корректности хода по правилам игры
+    private static bool IsValidMove(int[,] matrix, int newRow, int newCol, int colOffset, bool isWhite)
+    {
+        int targetCell = matrix[newRow, newCol]; // Смотрим, что стоит по желаемым координатам
+    
+        // Прямо можно только на пустую клетку
+        if (colOffset == 0)
+            return targetCell == Objects.Space;
+    
+        // По диагонали - на вражескую пешку или пустую клетку
+        return targetCell == Objects.Space || (isWhite && targetCell == Objects.BlackPawn) || (!isWhite && targetCell == Objects.WhitePawn);
+    }
+
+    // Вспомогательный метод для конвертации кортежа в матрицу
+    private static int[,] ConvertToMatrix((int row, int col)[] moves)
+    {
+        int[,] result = new int[moves.Length, 2]; // Инициализируем пустой массив соответствующий количеству ходов
+        for (int i = 0; i < moves.Length; i++) // Каждой паре в двумерном массиве (строке в матрице) 
         {
-            int newRow = row + direction;
-            int newCol = col + colOffset;
-
-            // Проверка границ
-            if (newRow >= 0 && newRow < height && newCol >= 0 && newCol < width)
-            {
-                int targetCell = matrix[newRow, newCol];
-
-                // Прямо - только на пустую клетку
-                if (colOffset == 0 && targetCell == Objects.Space)
-                {
-                    moves.Add((newRow, newCol));
-                }
-                // По диагонали - только на вражескую пешку
-                else if (colOffset != 0)
-                {
-                    // Атака: если клетка занята врагом (пешки разных цветов)
-                    if ((isWhite && targetCell == Objects.BlackPawn) ||
-                        (!isWhite && targetCell == Objects.WhitePawn))
-                    {
-                         moves.Add((newRow, newCol));
-                    }
-                    // В некоторых вариациях правил Прорыва можно бить и на пустую клетку по диагонали?
-                    // В классическом - нет, но в вашем коде было условие targetCell == Objects.Space.
-                    // Оставляем логику вашего кода (движение по диагонали возможно и на пустую клетку):
-                    else if (targetCell == Objects.Space)
-                    {
-                        moves.Add((newRow, newCol));
-                    }
-                }
-            }
+            result[i, 0] = moves[i].row; // строка
+            result[i, 1] = moves[i].col; // столбец
         }
-
-        // Конвертируем в массив
-        int[,] result = new int[moves.Count, 2];
-        for (int i = 0; i < moves.Count; i++)
-        {
-            result[i, 0] = moves[i].Item1;
-            result[i, 1] = moves[i].Item2;
-        }
-
         return result;
     }
 
-    // Выполнение хода с проверкой победы
-    public static GameResult MakeMove(SaveManager saveManager, int fromRow, int fromCol, int toRow, int toCol)
+    // Применение хода и определение результата (победа или продолжение)
+    internal static GameResult MakeMove(SaveManager saveManager, int fromRow, int fromCol, int toRow, int toCol)
     {
-        int[,] currentMatrix = saveManager.Matrix ?? throw new InvalidOperationException("Матрица не загружена");
-        
-        // 1. Создаем копию матрицы и применяем ход
-        int[,] newMatrix = (int[,])currentMatrix.Clone();
-        
-        int pawn = newMatrix[fromRow, fromCol];
-        newMatrix[fromRow, fromCol] = Objects.Space;
-        newMatrix[toRow, toCol] = pawn;
+        int[,] currentMatrix = saveManager.Matrix ?? throw new InvalidOperationException("Матрица не загружена"); // Кидаем ошибку, если матрица не определена
 
-        // 2. Сохраняем новую матрицу (это увеличит счетчик ходов в SaveManager)
-        saveManager.SaveMatrix(newMatrix);
+        // 1. Применяем ход
+        int[,] newMatrix = (int[,])currentMatrix.Clone(); // Клонируем матрицу
+        int pawn = newMatrix[fromRow, fromCol]; // Копируем значение пешки, на которую применяется ход
+        newMatrix[fromRow, fromCol] = Objects.Space;// Старое положение становится пустым
+        newMatrix[toRow, toCol] = pawn; // Новое положение занимает пешка
+        
+        saveManager.SaveMatrix(newMatrix); // 2. Сохраняем (ход валиден, матрица обновлена)
+        
+        Winner winner = CheckReachEndCondition(newMatrix, toRow, pawn); // 3. Проверяем кто дошёл до края и выдаём значение через коллекцию Winner
+        
+        if (winner == Winner.None) winner = CheckWipeoutCondition(newMatrix); // Если никто не дошел до края, проверяем, не съели ли всех
+        
+        if (winner != Winner.None) // Если кто-то победил, то фиксируем результат
+        {
+            saveManager.Win(); // Обращаемся к SaveManager, что бы он закончил игру на файловом уровне
+            string msg = $"{(winner == Winner.White ? "Белые" : "Чёрные")} победили!"; // Формируем сообщение с информацией кто победил
+            return new GameResult { IsGameOver = true, Message = msg }; // Возвращаем сообщение
+        }
 
-        // 3. Проверяем условия победы или окончания игры
-        try
-        {
-            CheckWinCondition(newMatrix, toRow, pawn);
-            CheckPawnPresence(newMatrix);
-            
-            return new GameResult { IsGameOver = false };
-        }
-        catch (Exception ex)
-        {
-            // Если игра окончена (победа или ошибка), фиксируем победу
-            saveManager.Win();
-            return new GameResult { IsGameOver = true, Message = ex.Message };
-        }
+        // Игра продолжается
+        return new GameResult { IsGameOver = false };
     }
 
-    // Вспомогательный метод для проверки достижения края доски
-    private static void CheckWinCondition(int[,] matrix, int newRow, int pawnType)
+
+    // Метод проверяет, дошла ли пешка до края
+    private static Winner CheckReachEndCondition(int[,] matrix, int movedRow, int pawnType)
     {
-        int height = matrix.GetLength(0);
-        
-        if (pawnType == Objects.WhitePawn && newRow == 0)
-            throw new Exception("Белые победили! Пешка достигла края доски.");
-            
-        if (pawnType == Objects.BlackPawn && newRow == height - 1)
-            throw new Exception("Чёрные победили! Пешка достигла края доски.");
+        int height = matrix.GetLength(0); // Получаем высоту доски
+        if (pawnType == Objects.WhitePawn && movedRow == 0) // Если пешка белая и дошла до верхней точки - победа белых
+            return Winner.White;
+
+        if (pawnType == Objects.BlackPawn && movedRow == height - 1) // Если чёрная дошла до низа - чёрных
+            return Winner.Black;
+
+        return Winner.None; // В ином случае никто не победил, так как никто не дошёл до края
     }
 
-    // Вспомогательный метод для проверки наличия фигур
-    private static void CheckPawnPresence(int[,] matrix)
+    // Метод проверяет наличие фигур на доске (на случай полного уничтожения)
+    private static Winner CheckWipeoutCondition(int[,] matrix)
     {
-        int whiteCount = 0;
-        int blackCount = 0;
-        int height = matrix.GetLength(0);
-        int width = matrix.GetLength(1);
-
-        for (int i = 0; i < height; i++)
-        {
-            for (int j = 0; j < width; j++)
-            {
-                if (matrix[i, j] == Objects.WhitePawn) whiteCount++;
-                else if (matrix[i, j] == Objects.BlackPawn) blackCount++;
-            }
-        }
-
-        if (blackCount == 0) throw new Exception("Белые победили! У чёрных не осталось пешек.");
-        if (whiteCount == 0) throw new Exception("Чёрные победили! У белых не осталось пешек.");
+        int whiteCount = matrix.Cast<int>().Count(cell => cell == Objects.WhitePawn); // Получаем количество белых пешек
+        int blackCount = matrix.Cast<int>().Count(cell => cell == Objects.BlackPawn); // Получаем количество чёрных пешек
+        
+        return blackCount == 0 ? Winner.White : whiteCount == 0 ? Winner.Black : Winner.None; // Если у чёрных не кончились пешки, проверяем наличие белых и возвращаем ответ
     }
 
     // Создание начальной матрицы
     public static int[,] CreateMatrix(int height, int width)
     {
-        if (height <= 5 || width <= 3 || width >= 17 || height >= 17)
-            throw new ArgumentException("Недопустимые размеры поля");
+        int[,] matrix = new int[height, width]; // Расчерчиваем матрицу
 
-        int[,] matrix = new int[height, width];
-
-        for (int i = 0; i < height; i++)
+        for (int i = 0; i < height; i++) 
         {
             for (int j = 0; j < width; j++)
             {
-                if (i == 0 || i == 1)
-                    matrix[i, j] = Objects.BlackPawn;
-                else if (i == height - 1 || i == height - 2)
-                    matrix[i, j] = Objects.WhitePawn;
-                else
-                    matrix[i, j] = Objects.Space;
+                if (i <= 1) matrix[i, j] = Objects.BlackPawn; // Если верхние два ряда - чёрная пешка
+                if (i >= height - 2) matrix[i, j] = Objects.WhitePawn; // Если нижние два ряда - белая
             }
         }
 
@@ -166,38 +133,28 @@ public static class Core
     }
 
     // Получение списка координат всех пешек (для навигации в UI)
-    public static int[,] GetPawnCoordinates(int[,] matrix)
+    internal static int[,] GetPawnCoordinates(int[,] matrix)
     {
-        if (matrix == null) return new int[0, 2];
-        
-        var list = new List<int[]>();
         int rows = matrix.GetLength(0);
         int cols = matrix.GetLength(1);
-
-        for (int i = 0; i < rows; i++)
-        {
-            for (int j = 0; j < cols; j++)
-            {
-                if (matrix[i, j] != Objects.Space)
-                {
-                    list.Add(new int[] { i, j });
-                }
-            }
-        }
-
-        // Перевод в int[,]
-        int[,] result = new int[list.Count, 2];
-        for (int k = 0; k < list.Count; k++)
-        {
-            result[k, 0] = list[k][0];
-            result[k, 1] = list[k][1];
-        }
+    
+        // Собираем координаты одним выражением
+        var coords = Enumerable.Range(0, rows) // Проходимся по всем строкам
+            .SelectMany(row => Enumerable.Range(0, cols) // Проходимся по всем столбцам
+                .Where(col => matrix[row, col] != Objects.Space) // Смотрим, где есть пешки
+                .Select(col => (row, col))) // Строим кортеж координат
+            .ToArray(); // Преобразуем кортежи в массив
+    
+        // Преобразуем в двумерный массив для отправки в UI
+        int[,] result = new int[coords.Length, 2]; // Создаём массив с высотой 2
+        for (int i = 0; i < coords.Length; i++) (result[i, 0], result[i, 1]) = coords[i]; // Проходясь по каждой паре раскладываем её внутри массива
         return result;
     }
 
-    public struct GameResult
+    // Структура результата применения хода
+    internal struct GameResult
     {
-        public bool IsGameOver;
-        public string Message;
+        public bool IsGameOver; // Флаг, завершена ли игра
+        public string Message; // Сообщение для пользователя (победа)
     }
 }
