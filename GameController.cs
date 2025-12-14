@@ -38,13 +38,16 @@ internal static class Renderer
     public static void Initialize()
     {
         Console.OutputEncoding = Encoding.UTF8; // Поддержка UTF-8
-        SetCursorVisibility(false); // Скрываем курсор
+        
+        Console.SetWindowSize(80, 45); // Задаём размеры окна
+        
         _width = Console.WindowWidth; // Получаем ширину окна
         _height = Console.WindowHeight; // Получаем высоту окна
 
         _frontBuffer = new ConsoleCell[_width, _height]; // Инициализируем старый буфер
         _backBuffer = new ConsoleCell[_width, _height]; // Инициализируем новый буфер
-
+        
+        SetCursorVisibility(false); // Скрываем курсор
         Clear(true); // Очищаем оба буфера
     }
     
@@ -734,7 +737,6 @@ static class GameController
         // Отрисовка горизонтального разделителя
         StringBuilder line = new StringBuilder("   +");
         for (int c = 0; c < cols; c++) line.Append("---+");
-        line.Append('+');
         string lineStr = line.ToString();
         Renderer.Write(0, y++, lineStr);
         
