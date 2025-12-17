@@ -5,6 +5,8 @@ namespace Breakthrough;
 // Управляет логикой одного сохранения игры
 internal class SaveManager
 {
+    // Случайное значение
+    private static readonly Random Random = new();
     // Уникальный код сохранения (используется в имени файла)
     private string _uniqueCode;
     // Количество сделанных ходов
@@ -56,7 +58,7 @@ internal class SaveManager
         _matrix = matrix;
         _moveCount = 0;
         _players = players;
-        _firstMove = firstMove;
+        _firstMove = firstMove != 2 ? firstMove : Random.Next(0,2);
         PerformSave();
     }
 
