@@ -10,6 +10,7 @@ internal struct Objects
 
 static class Program
 {
+    public static readonly Random Random = new();
     static void Main()
     {
         // Инициализируем игру

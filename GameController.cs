@@ -252,7 +252,7 @@ class NewGameMenuState : GameState
         Renderer.PositionCursor(0, 0);// Возвращаем курсор в начало, чтобы не сломать логику Renderer
     }
 
-    // Измение параметров первой игры
+    // Изменение параметров первой игры
     private void HandleNewGameChange(bool increase)
     {
         switch (_newGameMenuSelection)
@@ -625,7 +625,7 @@ class PauseMenuState : GameState
 // Главный контроллер игры, управляющий состояниями и игровой логикой
 static class GameController
 {
-    private static readonly Random Random = new(); // Что бы случайное значение было действительно случайным
+    private static readonly Random Random = new(); // Что бы случайное значение было действительно случайным (IDE ставит ошибку на _random, так как считает, что он должен быть приватным, только для чтения и с большой буквы)
     
     private static GameState _currentState = null!; // Текущее состояние игры
     public static SaveManager SaveManager = null!; // Менеджер сохранений
