@@ -252,7 +252,7 @@ class NewGameMenuState : GameState
         Renderer.PositionCursor(0, 0);// Возвращаем курсор в начало, чтобы не сломать логику Renderer
     }
 
-    // Измени е параметров первой игры
+    // Измение параметров первой игры
     private void HandleNewGameChange(bool increase)
     {
         switch (_newGameMenuSelection)
@@ -625,6 +625,8 @@ class PauseMenuState : GameState
 // Главный контроллер игры, управляющий состояниями и игровой логикой
 static class GameController
 {
+    private static readonly Random Random = new(); // Что бы случайное значение было действительно случайным
+    
     private static GameState _currentState = null!; // Текущее состояние игры
     public static SaveManager SaveManager = null!; // Менеджер сохранений
 
@@ -687,7 +689,7 @@ static class GameController
         BlackPlayerName = blackName;
         SaveManager = new SaveManager(); // Создаём новый менеджер сохранений
         int[,] matrix = Core.CreateMatrix(height, width); // Создаём начальную матрицу
-        SaveManager.Start(matrix, [whiteName, blackName], firstMove);  // Инициализируем игру в менеджере
+        SaveManager.Start(matrix, [whiteName, blackName], firstMove == 2 ? Random.Next(0,2) : firstMove);  // Инициализируем игру в менеджере
         UpdateLocalState(); // Обновляем локальное состояние
     }
 
